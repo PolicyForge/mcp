@@ -1,0 +1,32 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "co.policyforge/mcp",
+  "description": "Generate, audit, and maintain legal policies that match what your code actually does.",
+  "status": "active",
+  "version": "0.4.0",
+  "websiteUrl": "https://policyforge.co",
+  "repository": {
+    "url": "https://github.com/Ekirapapaul/legal-policy-pilot",
+    "source": "github",
+    "subfolder": "mcp"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@policyforge/mcp",
+      "version": "0.4.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "POLICYFORGE_API_KEY",
+          "description": "PolicyForge API key — create one at https://policyforge.co/api-dashboard",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "name": "@policyforge/mcp",
+  "version": "0.5.0",
+  "mcpName": "co.policyforge/mcp",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./tools": {
+      "types": "./dist/tools.d.ts",
+      "default": "./dist/tools.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "default": "./dist/client.js"
+    }
+  },
+  "description": "Model Context Protocol server for PolicyForge \u2014 generate privacy policies, terms of service, cookie policies and more directly from AI coding tools (Claude Code, Cursor, Windsurf).",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "policyforge",
+    "privacy-policy",
+    "terms-of-service",
+    "legal",
+    "compliance",
+    "gdpr",
+    "ccpa"
+  ],
+  "homepage": "https://policyforge.co",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "bin": {
+    "policyforge-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.3"
+  }
+}

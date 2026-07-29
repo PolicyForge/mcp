@@ -4,7 +4,7 @@ import { PolicyForgeClient, PolicyForgeError } from "./client.js";
 
 // --- Enumerations mirrored from the PolicyForge public API -------------------
 // Field schemas in ./generated/contract.js are generated from the API's field
-// contract and published with each release — do not hand-edit them here.
+// contract and refreshed on each release — do not hand-edit them here.
 
 import { CONTEXT_FIELDS, BAA_FIELDS } from "./generated/contract.js";
 

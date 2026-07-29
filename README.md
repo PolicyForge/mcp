@@ -31,17 +31,36 @@ All three expose the same tools. A and B need nothing installed.
 
 ### A. Remote with OAuth (easiest)
 
-Add the URL — no key, no config file editing:
+No key to copy, no config file to edit. You'll need a PolicyForge account
+first — <https://policyforge.co>, free, no card.
+
+**1. Add the server.** The `-s user` makes it available in every project rather
+than only the directory you ran this in:
 
 ```bash
-claude mcp add --transport http policyforge https://policyforge.co/api/mcp
+claude mcp add -s user --transport http policyforge https://policyforge.co/api/mcp
 ```
 
-Your client opens a browser, you sign in to PolicyForge and approve the
-connection, and it stores the token itself. Revoke it any time from your
-account settings.
+Note there is no `--header`. Omitting it is what makes the client use OAuth.
 
-You'll need an account first: <https://policyforge.co> (free, no card).
+**2. Restart your client.** MCP config is read at startup, so a session that
+was already running won't see the new server.
+
+**3. Authenticate.** Run `/mcp`, select `policyforge`, and press Enter:
+
+```
+policyforge · △ needs authentication
+```
+
+Your browser opens, you sign in and approve, and the client stores the token
+itself. You should land back at `/mcp` showing `✔ connected · 15 tools`.
+
+To confirm from the other side, a key named `MCP · <your client>` appears at
+<https://policyforge.co/api-dashboard> — that's the grant, and deleting it
+revokes access.
+
+Other clients differ in step 3: some prompt on first tool use rather than
+offering an explicit authenticate action.
 
 ### B. Remote with an API key
 
@@ -116,8 +135,16 @@ per-client instructions — with your API key pre-filled when signed in.
   checks are free; ask your agent to run `get_usage` to see what's left.
 - **429** — request rate limit (free tier: 10/minute, 100/day); the response
   includes `retry_after`.
+- **Server not listed in `/mcp`** — either the session started before you added
+  it (restart the client; config is read at startup), or it was added to a
+  different project scope. `claude mcp add -s user …` makes it available
+  everywhere.
 - **Tools missing** — restart the client after config changes; on Windows use
   the `cmd` wrapper above.
+- **"The redirect URI is not registered for this application"** — the client is
+  using a callback URL we haven't seen. Loopback callbacks work on any port
+  (per RFC 8252), so this should be rare; report the exact URI and it can be
+  supported.
 
 More detail: <https://policyforge.co/mcp#troubleshooting>
 

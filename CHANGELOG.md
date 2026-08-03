@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.1
+
+- The server now starts without `POLICYFORGE_API_KEY` instead of exiting, so a
+  host can list its tools before the user has configured a key. Previously it
+  called `process.exit(1)` before ever serving `tools/list`, which meant MCP
+  clients and directory crawlers saw a server that failed to start rather than
+  one awaiting credentials. Calling any tool without a key still fails, now as
+  a normal 401 carrying the same setup guidance.
+- Added a `Dockerfile` so the server can be built and introspected in a clean
+  container.
+
 ## 0.6.0
 
 - Tool schemas regenerated from the API field contract, adding

@@ -20,7 +20,12 @@ export class PolicyForgeError extends Error {
 }
 
 export interface ClientOptions {
-  apiKey: string;
+  /**
+   * Omitted when the host has not configured a key yet. The server still
+   * starts and lists its tools in that state; the failure is deferred to the
+   * first request so clients and directories can introspect without auth.
+   */
+  apiKey?: string;
   baseUrl?: string;
   /**
    * Client-surface tag sent as X-PolicyForge-Client so the server can split
@@ -30,12 +35,11 @@ export interface ClientOptions {
 }
 
 export class PolicyForgeClient {
-  private readonly apiKey: string;
+  private readonly apiKey: string | undefined;
   private readonly baseUrl: string;
   private readonly clientName: string;
 
   constructor({ apiKey, baseUrl, clientName }: ClientOptions) {
-    if (!apiKey) throw new Error("PolicyForge API key is required");
     this.apiKey = apiKey;
     // Trim a trailing slash so path joins stay clean.
     this.baseUrl = (baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, "");
@@ -105,6 +109,17 @@ export class PolicyForgeClient {
       for (const [k, v] of Object.entries(opts.query)) {
         if (v !== undefined && v !== "") url.searchParams.set(k, String(v));
       }
+    }
+
+    // Deferred to here rather than the constructor so the server can start and
+    // answer tools/list without credentials. A caller that actually invokes a
+    // tool gets a 401 shaped like every other auth failure.
+    if (!this.apiKey) {
+      throw new PolicyForgeError(
+        401,
+        "Missing POLICYFORGE_API_KEY. Create a key at https://policyforge.co/api-dashboard " +
+          'and set it in your MCP client config, e.g. "env": { "POLICYFORGE_API_KEY": "your_key_here" }.',
+      );
     }
 
     const timeoutMs = opts.timeoutMs ?? 30_000;

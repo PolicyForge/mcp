@@ -11,14 +11,18 @@ const pkg = createRequire(import.meta.url)("../package.json") as { version: stri
 async function main(): Promise<void> {
   const apiKey = process.env.POLICYFORGE_API_KEY;
   if (!apiKey) {
+    // Warn but keep going. Exiting here meant a host could never enumerate the
+    // tools before the user had configured a key, which is exactly what MCP
+    // clients and directory crawlers do on first contact. Calling any tool
+    // without a key still fails, with this same guidance.
     // stderr is safe: only stdout carries the MCP protocol stream.
     console.error(
-      "[policyforge-mcp] Missing POLICYFORGE_API_KEY environment variable.\n" +
+      "[policyforge-mcp] No POLICYFORGE_API_KEY set — starting anyway so tools can be\n" +
+        "listed, but every tool call will fail until you set one.\n" +
         "Create an API key at https://policyforge.co/api-dashboard and set it in your\n" +
         "MCP client config, e.g.:\n" +
         '  "env": { "POLICYFORGE_API_KEY": "your_key_here" }',
     );
-    process.exit(1);
   }
 
   const client = new PolicyForgeClient({

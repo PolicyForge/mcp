@@ -1,6 +1,6 @@
 {
   "name": "@policyforge/mcp",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "mcpName": "co.policyforge/mcp",
   "exports": {
     ".": {
@@ -16,7 +16,7 @@
       "default": "./dist/client.js"
     }
   },
-  "description": "Model Context Protocol server for PolicyForge \u2014 generate privacy policies, terms of service, cookie policies and more directly from AI coding tools (Claude Code, Cursor, Windsurf).",
+  "description": "Model Context Protocol server for PolicyForge — generate privacy policies, terms of service, cookie policies and more directly from AI coding tools (Claude Code, Cursor, Windsurf).",
   "keywords": [
     "mcp",
     "model-context-protocol",

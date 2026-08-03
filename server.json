@@ -3,19 +3,24 @@
   "name": "co.policyforge/mcp",
   "description": "Generate, audit, and maintain legal policies that match what your code actually does.",
   "status": "active",
-  "version": "0.4.0",
+  "version": "0.6.0",
   "websiteUrl": "https://policyforge.co",
   "repository": {
-    "url": "https://github.com/Ekirapapaul/legal-policy-pilot",
-    "source": "github",
-    "subfolder": "mcp"
+    "url": "https://github.com/PolicyForge/mcp",
+    "source": "github"
   },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://policyforge.co/api/mcp"
+    }
+  ],
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@policyforge/mcp",
-      "version": "0.4.0",
+      "version": "0.6.0",
       "transport": {
         "type": "stdio"
       },

@@ -23,6 +23,7 @@ export const CONTEXT_FIELDS = {
   security_measures: z.array(z.string()).optional().describe("Security controls, e.g. [\"encryption at rest\",\"MFA\"]."),
   physical_address: z.string().min(1).optional().describe("Company physical address."),
   dpo_email: z.string().email().optional().describe("Data Protection Officer email, if any. Also sets hasDPO."),
+  table_of_contents: z.boolean().optional().describe("Add a linked table of contents to the generated document. Requires a Pro plan."),
 };
 
 /** Fields specific to the BAA contract type. */

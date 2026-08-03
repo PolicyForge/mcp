@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.6.0
+
+- Tool schemas regenerated from the API field contract, adding
+  `table_of_contents`: a Pro option that prefixes a generated document with a
+  bulleted list of anchor links to each section.
+- Server-side (no package change needed): privacy policies, terms of service
+  and EULAs gained substantially more clause coverage. Privacy now includes a
+  CCPA/CPRA categories table with retention per category, the controller and
+  processor split for business products, GPC signals, sub-processor change
+  notification and an EU representative section. Terms gained a data export
+  window on termination, mutual indemnities, confidentiality, force majeure,
+  beta terms, an arbitration opt-out and an order of precedence. EULAs gained
+  a third-party and open-source components notice, export control, U.S.
+  Government restricted rights and a cap on direct damages.
+- Where a third-party AI provider is detected, privacy policies and terms now
+  state explicitly whether customer content is used to train models, how long
+  the provider retains it, and that output needs review.
+- The commercial clauses in terms of service require a Pro plan; everything
+  legally required remains available on the free tier.
+
 ## 0.5.0
 
 - New `generate_baa` tool: HIPAA Business Associate Agreements for either side

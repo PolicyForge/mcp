@@ -241,6 +241,62 @@ function safe(
   };
 }
 
+interface ClaimToVerify {
+  kind: string;
+  excerpt: string;
+  reason: string;
+}
+
+/** Statements the server flagged because the inputs never supplied them. */
+function claimsSection(claims: ClaimToVerify[] | undefined): string[] {
+  if (!claims?.length) return [];
+  return [
+    "",
+    `**Claims to verify before publishing (${claims.length}):** the inputs did not supply these, so confirm each one or edit it out with update_policy.`,
+    ...claims.map((c) => `- "${c.excerpt}" (${c.reason})`),
+  ];
+}
+
+export interface PolicyEdit {
+  find: string;
+  replace: string;
+}
+
+/**
+ * Applies exact find/replace edits. Each `find` must occur exactly once so an
+ * edit can never land somewhere unintended; any failure aborts the whole set.
+ */
+export function applyEdits(content: string, edits: PolicyEdit[]): { content: string } | { error: string } {
+  let next = content;
+  for (const [i, e] of edits.entries()) {
+    const count = e.find ? next.split(e.find).length - 1 : 0;
+    if (count !== 1) {
+      return {
+        error:
+          `Edit ${i + 1}: "find" text ${count === 0 ? "was not found" : `matches ${count} places`} ` +
+          "in the current content. Use get_policy to copy the exact text, and include enough " +
+          "surrounding words to make it unique. No edits were applied.",
+      };
+    }
+    next = next.replace(e.find, () => e.replace);
+  }
+  return { content: next };
+}
+
+/** Consecutive identical non-blank lines introduced by an update. */
+export function newDuplicateLines(before: string, after: string): string[] {
+  const dupes = (text: string) => {
+    const out = new Set<string>();
+    const lines = text.split("\n").map((l) => l.trim());
+    for (let i = 1; i < lines.length; i++) {
+      if (lines[i] && lines[i] === lines[i - 1] && !/^[-|:\s]+$/.test(lines[i])) out.add(lines[i]);
+    }
+    return out;
+  };
+  const had = dupes(before);
+  return [...dupes(after)].filter((l) => !had.has(l));
+}
+
 function textResult(text: string) {
   return { content: [{ type: "text" as const, text }] };
 }
@@ -271,6 +327,31 @@ function integrationGuide(
     "**Option B — embed the policy inside your own page:** the snippet below injects",
     "the policy content inline (no iframe), so it inherits your site's typography.",
     "Content updates made in PolicyForge propagate automatically — no redeploy.",
+    "",
+    "Privacy note for A and B: both make the visitor's browser request policyforge.co,",
+    "so PolicyForge receives visitor IP addresses and must be listed as a processor in",
+    "your privacy policy. With B the text is also injected by JavaScript, so it is not",
+    "in the page's server HTML.",
+    "",
+    "**Option C — render it yourself (no third-party request):** fetch the Markdown",
+    `server-side from GET https://policyforge.co/api/v1/policies/{id} (Authorization:`,
+    "Bearer <API key>, kept server-side) at build time or with revalidation, and render",
+    "it on your own page. PolicyForge stays the source of truth and edits sync on the",
+    "next build or revalidation, with no manual copying. Example (Next.js):",
+    "",
+    "```tsx",
+    "// app/privacy/page.tsx; render `content` with your Markdown component",
+    "export const revalidate = 3600;",
+    "export default async function PolicyPage() {",
+    "  const res = await fetch(`https://policyforge.co/api/v1/policies/${process.env.POLICY_ID}`, {",
+    "    headers: { Authorization: `Bearer ${process.env.POLICYFORGE_API_KEY}` },",
+    "  });",
+    "  const { content } = await res.json();",
+    "  return <Markdown>{content}</Markdown>;",
+    "}",
+    "```",
+    "",
+    "Embed snippets for option B:",
     "",
   ].join("\n");
 
@@ -357,7 +438,12 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
         "tags, cookie writes, outbound hosts), then fill the optional fields below " +
         "from what the code actually does — do not ask the user for facts you can " +
         "read from source. Only ask for what code cannot tell you: legal company " +
-        "name, contact email, physical address, governing law.",
+        "name, contact email, physical address, governing law. For terms_of_service, " +
+        "eula and disclaimer, always ask for governing_law: without it (or a physical " +
+        "address to infer it from) the document contains a marker to fill in. " +
+        "The result lists claims to verify: specific statements about third parties, " +
+        "certifications or deadlines that your inputs did not supply. Show them to " +
+        "the user and fix them with update_policy before publishing.",
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -402,11 +488,13 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
         content: string;
         hosted_url?: string;
         subscription_info?: SubscriptionInfo;
+        claims_to_verify?: ClaimToVerify[];
       };
       const lines = [`# ${result.title}`, `Policy ID: ${result.id}`];
       if (result.hosted_url) lines.push(`Hosted URL: ${result.hosted_url}`);
       const remaining = remainingLine(result.subscription_info);
       if (remaining) lines.push(remaining);
+      lines.push(...claimsSection(result.claims_to_verify));
       lines.push("", "---", "", result.content);
       return textResult(lines.join("\n"));
     }),
@@ -549,8 +637,10 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
         "keep working, so links already published on the user's site stay valid. " +
         "Use this instead of generate_policy when the business context changed " +
         "(new SDK, new data flow, renamed company): fetch the current content with " +
-        "get_policy, revise the Markdown yourself, and submit it here. " +
-        "Note: there is no version history — the previous content is overwritten.",
+        "get_policy, then either send small changes as `edits` (exact find/replace " +
+        "pairs, best for one-line fixes) or submit the complete revised Markdown as " +
+        "`content`. The previous content is saved as a version first, so " +
+        "restore_policy_version can undo a bad update.",
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -565,7 +655,22 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
           .min(1)
           .optional()
           .describe(
-            "Full replacement Markdown content. Submit the COMPLETE document, not a diff.",
+            "Full replacement Markdown content. Submit the COMPLETE document, not a diff. " +
+              "Omit when using `edits`.",
+          ),
+        edits: z
+          .array(
+            z.object({
+              find: z.string().min(1).describe("Exact text currently in the policy. Must occur exactly once."),
+              replace: z.string().describe("Replacement text (empty string deletes it)."),
+            }),
+          )
+          .min(1)
+          .optional()
+          .describe(
+            "Small changes applied to the current content in order, e.g. " +
+              '[{"find":"Paddle","replace":"Dodo Payments"}]. All edits must match ' +
+              "or none are applied. Cannot be combined with `content`.",
           ),
         status: z
           .enum(["draft", "published", "archived"])
@@ -585,16 +690,37 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
           .describe('Enable/disable the "I agree" consent banner on the hosted page.'),
       },
     },
-    safe(async ({ id, ...fields }) => {
-      const updates = Object.fromEntries(
+    safe(async ({ id, edits, ...fields }) => {
+      const updates: Record<string, unknown> = Object.fromEntries(
         Object.entries(fields).filter(([, v]) => v !== undefined),
       );
+      const errorResult = (text: string) => ({
+        content: [{ type: "text" as const, text }],
+        isError: true,
+      });
+      let previousContent: string | undefined;
+      if (edits) {
+        if (updates.content !== undefined) {
+          return errorResult("Provide either `content` or `edits`, not both.");
+        }
+        const current = (await client.getPolicy(id)) as { content?: string };
+        if (typeof current?.content !== "string") {
+          return errorResult("Could not load the current policy content to apply edits to.");
+        }
+        const applied = applyEdits(current.content, edits);
+        if ("error" in applied) return errorResult(applied.error);
+        previousContent = current.content;
+        updates.content = applied.content;
+      } else if (typeof updates.content === "string") {
+        const current = (await client.getPolicy(id).catch(() => null)) as { content?: string } | null;
+        previousContent = current?.content;
+      }
       if (Object.keys(updates).length === 0) {
         return {
           content: [
             {
               type: "text",
-              text: "No fields to update. Provide at least one of: title, content, status, effective_date, hosting_enabled, consent_tracking.",
+              text: "No fields to update. Provide at least one of: title, content, edits, status, effective_date, hosting_enabled, consent_tracking.",
             },
           ],
           isError: true,
@@ -610,8 +736,17 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
       const lines = [
         `Policy updated: ${result.title ?? id}`,
         `Policy ID: ${result.id ?? id}`,
-        `Updated fields: ${Object.keys(updates).join(", ")}`,
+        `Updated fields: ${Object.keys(updates).join(", ")}${edits ? ` (${edits.length} edit${edits.length === 1 ? "" : "s"})` : ""}`,
       ];
+      if (typeof updates.content === "string" && previousContent !== undefined) {
+        const dupes = newDuplicateLines(previousContent, updates.content);
+        if (dupes.length > 0) {
+          lines.push(
+            `Warning: this update introduced repeated consecutive lines: ${dupes.map((d) => `"${d.slice(0, 80)}"`).join(", ")}. ` +
+              "If unintended, fix with another edit or restore_policy_version.",
+          );
+        }
+      }
       if (result.status) lines.push(`Status: ${result.status}`);
       if (result.hosted_url) lines.push(`Hosted URL: ${result.hosted_url} (unchanged — existing links keep working)`);
       if (result.updated_at) lines.push(`Updated at: ${result.updated_at}`);
@@ -663,6 +798,7 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
         hosted_url?: string;
         previous_version_saved?: boolean;
         subscription_info?: SubscriptionInfo;
+        claims_to_verify?: ClaimToVerify[];
       };
       const lines = [
         `# ${result.title ?? "Policy regenerated"}`,
@@ -678,6 +814,7 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
       );
       const remaining = remainingLine(result.subscription_info);
       if (remaining) lines.push(remaining);
+      lines.push(...claimsSection(result.claims_to_verify));
       if (result.content) lines.push("", "---", "", result.content);
       return textResult(lines.join("\n"));
     }),

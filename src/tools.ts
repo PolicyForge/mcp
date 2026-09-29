@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { PolicyForgeClient, PolicyForgeError } from "./client.js";
+import { PolicyForgeClient, PolicyForgeError, errorMessage } from "./client.js";
 
 // --- Enumerations mirrored from the PolicyForge public API -------------------
 // Field schemas in ./generated/contract.js are generated from the API's field
@@ -226,11 +226,11 @@ function remainingLine(info: SubscriptionInfo | undefined): string | null {
 
 /** Wrap a handler so upstream errors become clean MCP tool errors, not crashes. */
 function safe(
-  fn: (args: any) => Promise<{ content: any[]; isError?: boolean }>,
+  fn: (args: any, extra: any) => Promise<{ content: any[]; isError?: boolean }>,
 ) {
-  return async (args: any) => {
+  return async (args: any, extra: any) => {
     try {
-      return await fn(args);
+      return await fn(args, extra);
     } catch (err) {
       const msg =
         err instanceof PolicyForgeError
@@ -239,6 +239,146 @@ function safe(
       return { content: [{ type: "text", text: msg }], isError: true };
     }
   };
+}
+
+// Generation takes 40-60s, and most MCP clients abandon a request after 60s
+// while the server keeps going. Tools therefore start a background job, wait
+// for it for at most WAIT_MS while sending progress notifications, and hand
+// back a job id to check later if it is still running.
+const WAIT_MS = 45_000;
+
+interface GenerationJob {
+  job_id: string;
+  kind?: "generate" | "regenerate";
+  policy_id?: string;
+  status: "running" | "succeeded" | "failed";
+  http_status?: number;
+  result?: any;
+  error?: unknown;
+}
+
+type Awaited =
+  | { done: true; result: any }
+  | { done: false; job: GenerationJob };
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function sendProgress(extra: any, progress: number, message: string): Promise<void> {
+  const token = extra?._meta?.progressToken;
+  if (token === undefined || typeof extra?.sendNotification !== "function") return;
+  try {
+    await extra.sendNotification({
+      method: "notifications/progress",
+      params: { progressToken: token, progress, message },
+    });
+  } catch {
+    // Progress is best effort; the job keeps running either way.
+  }
+}
+
+function jobFailure(job: GenerationJob): PolicyForgeError {
+  const status = job.http_status ?? 500;
+  return new PolicyForgeError(status, errorMessage(status, job.error), job.error);
+}
+
+async function awaitGeneration(
+  client: PolicyForgeClient,
+  started: unknown,
+  extra: any,
+): Promise<Awaited> {
+  const start = started as Partial<GenerationJob> & Record<string, unknown>;
+  // A server without background jobs answers synchronously with the policy.
+  if (!start?.job_id) return { done: true, result: started };
+
+  const t0 = Date.now();
+  const deadline = t0 + WAIT_MS;
+  let tick = 0;
+  while (Date.now() < deadline) {
+    await sleep(Math.min(tick === 0 ? 2_000 : 4_000, Math.max(0, deadline - Date.now())));
+    tick += 1;
+    await sendProgress(extra, tick, `Generating (${Math.round((Date.now() - t0) / 1000)}s)`);
+    const job = (await client.getJob(start.job_id)) as GenerationJob;
+    if (job.status === "succeeded") return { done: true, result: job.result };
+    if (job.status === "failed") throw jobFailure(job);
+  }
+  return { done: false, job: start as GenerationJob };
+}
+
+function stillRunning(job: GenerationJob, what: string): { content: any[] } {
+  const lines = [
+    `${what} is still being generated. This usually takes under a minute more.`,
+    `Job ID: ${job.job_id}`,
+  ];
+  if (job.policy_id) lines.push(`Policy ID: ${job.policy_id}`);
+  lines.push(
+    "",
+    `Call check_generation with job_id "${job.job_id}" in about 30 seconds to get the result.`,
+    "Do NOT start the generation again: the job is already running, and a new call would create a duplicate.",
+  );
+  return textResult(lines.join("\n"));
+}
+
+function formatGenerated(result: {
+  id: string;
+  title: string;
+  content: string;
+  hosted_url?: string;
+  subscription_info?: SubscriptionInfo;
+  claims_to_verify?: ClaimToVerify[];
+}): { content: any[] } {
+  const lines = [`# ${result.title}`, `Policy ID: ${result.id}`];
+  if (result.hosted_url) lines.push(`Hosted URL: ${result.hosted_url}`);
+  const remaining = remainingLine(result.subscription_info);
+  if (remaining) lines.push(remaining);
+  lines.push(...claimsSection(result.claims_to_verify));
+  lines.push("", "---", "", result.content);
+  return textResult(lines.join("\n"));
+}
+
+function formatBaa(result: {
+  id: string;
+  title: string;
+  content: string;
+  subscription_info?: SubscriptionInfo;
+}): { content: any[] } {
+  const lines = [`# ${result.title}`, `Policy ID: ${result.id}`];
+  const remaining = remainingLine(result.subscription_info);
+  if (remaining) lines.push(remaining);
+  lines.push(
+    "",
+    "> This is a draft contract, not legal advice. Both parties should have counsel " +
+      "review it before signing. It is stored privately and is not publicly hosted.",
+    "",
+    "---",
+    "",
+    result.content,
+  );
+  return textResult(lines.join("\n"));
+}
+
+function formatRegenerated(result: {
+  id: string;
+  title?: string;
+  content?: string;
+  hosted_url?: string;
+  previous_version_saved?: boolean;
+  subscription_info?: SubscriptionInfo;
+  claims_to_verify?: ClaimToVerify[];
+}): { content: any[] } {
+  const lines = [`# ${result.title ?? "Policy regenerated"}`, `Policy ID: ${result.id}`];
+  if (result.hosted_url) {
+    lines.push(`Hosted URL: ${result.hosted_url} (unchanged — existing links keep working)`);
+  }
+  lines.push(
+    result.previous_version_saved === false
+      ? "Warning: the previous content could NOT be saved as a version."
+      : "Previous content saved as a version (restore_policy_version can undo this).",
+  );
+  const remaining = remainingLine(result.subscription_info);
+  if (remaining) lines.push(remaining);
+  lines.push(...claimsSection(result.claims_to_verify));
+  if (result.content) lines.push("", "---", "", result.content);
+  return textResult(lines.join("\n"));
 }
 
 interface ClaimToVerify {
@@ -443,7 +583,10 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
         "address to infer it from) the document contains a marker to fill in. " +
         "The result lists claims to verify: specific statements about third parties, " +
         "certifications or deadlines that your inputs did not supply. Show them to " +
-        "the user and fix them with update_policy before publishing.",
+        "the user and fix them with update_policy before publishing. " +
+        "Generation takes 40-60 seconds; if it is not finished within about 45 seconds " +
+        "this returns a job ID instead, and check_generation fetches the result. " +
+        "Never call generate_policy again for the same policy while a job is running.",
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -481,22 +624,9 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
           .describe("Host the policy at a public policyforge.co URL (default true)."),
       },
     },
-    safe(async (args) => {
-      const result = (await client.generatePolicy(args)) as {
-        id: string;
-        title: string;
-        content: string;
-        hosted_url?: string;
-        subscription_info?: SubscriptionInfo;
-        claims_to_verify?: ClaimToVerify[];
-      };
-      const lines = [`# ${result.title}`, `Policy ID: ${result.id}`];
-      if (result.hosted_url) lines.push(`Hosted URL: ${result.hosted_url}`);
-      const remaining = remainingLine(result.subscription_info);
-      if (remaining) lines.push(remaining);
-      lines.push(...claimsSection(result.claims_to_verify));
-      lines.push("", "---", "", result.content);
-      return textResult(lines.join("\n"));
+    safe(async (args, extra) => {
+      const outcome = await awaitGeneration(client, await client.startGeneration(args), extra);
+      return outcome.done ? formatGenerated(outcome.result) : stillRunning(outcome.job, "The policy");
     }),
   );
 
@@ -513,7 +643,9 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
         "addresses and is never hosted at a public URL. " +
         "\n\nAsk the user for the party details, effective date, and governing law: these " +
         "are negotiated facts you cannot read from source code. Requires a Pro plan. " +
-        "The result is a draft for counsel to review, not executed legal advice.",
+        "The result is a draft for counsel to review, not executed legal advice. " +
+        "If it is not finished within about 45 seconds this returns a job ID; use " +
+        "check_generation for the result.",
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -527,33 +659,17 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
         ...BAA_FIELDS,
       },
     },
-    safe(async (args) => {
-      const result = (await client.generatePolicy({
+    safe(async (args, extra) => {
+      const started = await client.startGeneration({
         ...args,
         type: "baa",
         // The API requires these on every generation; a BAA is healthcare by
         // definition and its governing law is carried by baa_governing_law_state.
         business_type: "healthcare",
         jurisdiction: "us",
-      })) as {
-        id: string;
-        title: string;
-        content: string;
-        subscription_info?: SubscriptionInfo;
-      };
-      const lines = [`# ${result.title}`, `Policy ID: ${result.id}`];
-      const remaining = remainingLine(result.subscription_info);
-      if (remaining) lines.push(remaining);
-      lines.push(
-        "",
-        "> This is a draft contract, not legal advice. Both parties should have counsel " +
-          "review it before signing. It is stored privately and is not publicly hosted.",
-        "",
-        "---",
-        "",
-        result.content,
-      );
-      return textResult(lines.join("\n"));
+      });
+      const outcome = await awaitGeneration(client, started, extra);
+      return outcome.done ? formatBaa(outcome.result) : stillRunning(outcome.job, "The agreement");
     }),
   );
 
@@ -600,7 +716,20 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
       },
     },
     safe(async ({ id }) => {
-      const result = (await client.getPolicy(id)) as {
+      let fetched: unknown;
+      try {
+        fetched = await client.getPolicy(id);
+      } catch (err) {
+        // A just-started generation has no policy row yet; its job id is the
+        // policy id, so report the job instead of a bare "not found".
+        if (!(err instanceof PolicyForgeError) || err.status !== 404) throw err;
+        const job = (await client.getJob(id).catch(() => null)) as GenerationJob | null;
+        if (!job) throw err;
+        if (job.status === "failed") throw jobFailure(job);
+        if (job.status === "running") return stillRunning(job, "This policy");
+        fetched = await client.getPolicy(id);
+      }
+      const result = fetched as {
         id?: string;
         type?: string;
         title?: string;
@@ -625,6 +754,34 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
       if (result.updated_at) lines.push(`Updated: ${result.updated_at}`);
       lines.push("", "---", "", result.content);
       return textResult(lines.join("\n"));
+    }),
+  );
+
+  server.registerTool(
+    "check_generation",
+    {
+      title: "Check generation",
+      description:
+        "Get the result of a generate_policy, generate_baa or regenerate_policy call " +
+        "that was still running when it returned a job ID. Returns the finished " +
+        "policy, the error if generation failed, or says it is still running. " +
+        "Use this instead of starting the generation again, which would create a duplicate.",
+      annotations: { readOnlyHint: true, openWorldHint: true },
+      inputSchema: {
+        job_id: z.string().min(1).describe("The job ID returned by the generation tool."),
+      },
+    },
+    safe(async ({ job_id }, extra) => {
+      const job = (await client.getJob(job_id)) as GenerationJob;
+      const outcome = job.status === "running"
+        ? await awaitGeneration(client, job, extra)
+        : job.status === "failed"
+          ? (() => { throw jobFailure(job); })()
+          : { done: true as const, result: job.result };
+      if (!outcome.done) return stillRunning(outcome.job, "The policy");
+      if (job.kind === "regenerate") return formatRegenerated(outcome.result);
+      if (outcome.result?.type === "baa" || outcome.result?.policy_type === "baa") return formatBaa(outcome.result);
+      return formatGenerated(outcome.result);
     }),
   );
 
@@ -766,7 +923,8 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
         "Consumes one generation from quota, like generate_policy. Use this when " +
         "the business context changed substantially (new integrations, new " +
         "jurisdiction, renamed company); for small wording fixes prefer " +
-        "update_policy, which is free and instant.",
+        "update_policy, which is free and instant. If it is not finished within " +
+        "about 45 seconds this returns a job ID; use check_generation for the result.",
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -787,36 +945,14 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
         stack_manifest: STACK_MANIFEST_FIELD,
       },
     },
-    safe(async ({ id, ...changes }) => {
+    safe(async ({ id, ...changes }, extra) => {
       const body = Object.fromEntries(
         Object.entries(changes).filter(([, v]) => v !== undefined),
       );
-      const result = (await client.regeneratePolicy(id, body)) as {
-        id: string;
-        title?: string;
-        content?: string;
-        hosted_url?: string;
-        previous_version_saved?: boolean;
-        subscription_info?: SubscriptionInfo;
-        claims_to_verify?: ClaimToVerify[];
-      };
-      const lines = [
-        `# ${result.title ?? "Policy regenerated"}`,
-        `Policy ID: ${result.id}`,
-      ];
-      if (result.hosted_url) {
-        lines.push(`Hosted URL: ${result.hosted_url} (unchanged — existing links keep working)`);
-      }
-      lines.push(
-        result.previous_version_saved === false
-          ? "Warning: the previous content could NOT be saved as a version."
-          : "Previous content saved as a version (restore_policy_version can undo this).",
-      );
-      const remaining = remainingLine(result.subscription_info);
-      if (remaining) lines.push(remaining);
-      lines.push(...claimsSection(result.claims_to_verify));
-      if (result.content) lines.push("", "---", "", result.content);
-      return textResult(lines.join("\n"));
+      const outcome = await awaitGeneration(client, await client.startRegeneration(id, body), extra);
+      return outcome.done
+        ? formatRegenerated(outcome.result)
+        : stillRunning(outcome.job, "The regenerated policy");
     }),
   );
 

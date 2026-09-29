@@ -53,7 +53,7 @@ policyforge · △ needs authentication
 ```
 
 Your browser opens, you sign in and approve, and the client stores the token
-itself. You should land back at `/mcp` showing `✔ connected · 15 tools`.
+itself. You should land back at `/mcp` showing `✔ connected · 16 tools`.
 
 To confirm from the other side, a key named `MCP · <your client>` appears at
 <https://policyforge.co/api-dashboard> — that's the grant, and deleting it
@@ -155,7 +155,8 @@ More detail: <https://policyforge.co/mcp#troubleshooting>
 | `generate_policy` | Generate a policy and return its Markdown content + hosted URL. Consumes one policy from your quota. |
 | `generate_baa` | Generate a HIPAA Business Associate Agreement between a covered entity and a vendor handling PHI. Built from the clauses required by 45 CFR 164.504(e) and validated clause by clause. Pro plan; never publicly hosted. Consumes one policy from your quota. |
 | `regenerate_policy` | Re-run the AI engine with changed business context — same ID and hosted URL, previous content saved as a version. |
-| `update_policy` | Hand-edit a policy in place — same ID and hosted URL, so published links keep working. |
+| `check_generation` | Get the result of a generation that was still running when its tool returned a job ID (generation takes 40-60s; tools wait up to 45s). |
+| `update_policy` | Edit a policy in place with find/replace edits or full content — same ID and hosted URL, so published links keep working. |
 | `audit_compliance` | Gap analysis: compare what the code does (your scanned manifest) with what a policy discloses. |
 | `check_policy_freshness` | Drift detection: diff the current codebase scan against the manifest stored at generation time. |
 | `list_policy_versions` | Version history — a snapshot is saved before every update, regeneration, or restore. |

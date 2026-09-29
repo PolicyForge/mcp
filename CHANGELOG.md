@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.8.0
+
+- Generation no longer times out in MCP clients. Generating a policy takes
+  40-60 seconds, and most MCP clients abandon a tool call after 60 seconds
+  while the server finishes anyway, so a retry created a duplicate policy.
+  `generate_policy`, `generate_baa` and `regenerate_policy` now start a
+  background job, wait for it for up to 45 seconds while sending progress
+  notifications, and return the result as before when it is ready. If it is
+  still running, they return a job ID instead.
+- New `check_generation` tool: returns the result of a job, its error, or
+  that it is still running. Tool output tells the agent to use it rather than
+  start the generation again.
+- `get_policy` on a new policy that is still being generated reports the job
+  instead of "not found" (the job ID is also the new policy's ID).
+- Requires the API's `?async=true` generation mode and `GET /api/v1/jobs/{id}`,
+  both live on policyforge.co. Against a server without them, the tools fall
+  back to waiting for the synchronous response.
+
 ## 0.7.0
 
 - `update_policy` accepts `edits`: a list of exact find/replace pairs applied

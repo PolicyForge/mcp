@@ -51,6 +51,26 @@ export class PolicyForgeClient {
     return this.request("POST", "/api/v1/policies", { body, timeoutMs: 180_000 });
   }
 
+  /**
+   * Starts a generation in the background: the server answers 202 with a job
+   * id at once (which is also the new policy's id), so no MCP client's
+   * request timeout can cut the call off. Poll with getJob.
+   */
+  async startGeneration(body: Record<string, unknown>): Promise<unknown> {
+    return this.request("POST", "/api/v1/policies", { body, query: { async: "true" } });
+  }
+
+  async startRegeneration(id: string, body: Record<string, unknown>): Promise<unknown> {
+    return this.request("POST", `/api/v1/policies/${encodeURIComponent(id)}/regenerate`, {
+      body,
+      query: { async: "true" },
+    });
+  }
+
+  async getJob(jobId: string): Promise<unknown> {
+    return this.request("GET", `/api/v1/jobs/${encodeURIComponent(jobId)}`, { timeoutMs: 15_000 });
+  }
+
   async listPolicies(query: Record<string, string | number | undefined>): Promise<unknown> {
     return this.request("GET", "/api/v1/policies", { query });
   }
@@ -173,7 +193,7 @@ export class PolicyForgeClient {
   }
 }
 
-function errorMessage(status: number, parsed: unknown): string {
+export function errorMessage(status: number, parsed: unknown): string {
   const p = parsed as { error?: string; details?: unknown; retry_after?: number } | undefined;
   const base = p?.error || `Request failed with status ${status}`;
 

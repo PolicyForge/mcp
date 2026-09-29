@@ -3,7 +3,7 @@
   "name": "co.policyforge/mcp",
   "description": "Generate, audit, and maintain legal policies that match what your code actually does.",
   "status": "active",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "websiteUrl": "https://policyforge.co",
   "repository": {
     "url": "https://github.com/PolicyForge/mcp",
@@ -20,7 +20,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@policyforge/mcp",
-      "version": "0.6.1",
+      "version": "0.7.0",
       "transport": {
         "type": "stdio"
       },

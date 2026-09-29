@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.7.0
+
+- `update_policy` accepts `edits`: a list of exact find/replace pairs applied
+  to the current content, so a one-line fix no longer means resubmitting the
+  whole document. Each `find` must match exactly once, and if any edit fails
+  to match, none are applied. Cannot be combined with `content`.
+- `update_policy` warns when an update introduces repeated consecutive lines.
+- Corrected the `update_policy` description: every content or title update
+  saves the previous version first, so `restore_policy_version` can undo it.
+- `generate_policy` and `regenerate_policy` list the claims to verify that the
+  API now returns: specific statements about third parties, certifications,
+  data transfer frameworks or deadlines that the inputs did not supply, plus
+  any marker left for a missing detail such as governing law.
+- `generate_policy` tells agents to ask for `governing_law` for terms of
+  service, EULAs and disclaimers.
+- `get_integration_guide` notes that the hosted link and the embed both make
+  visitors' browsers contact policyforge.co, and adds a third option that
+  renders the policy on the site's own page from the API.
+- Server-side (no package change needed): `stack_manifest` is accepted again.
+  Since late July 2026 every request carrying it was rejected with "stack_manifest must
+  be a string". Generated policies no longer state an AI provider's retention
+  period, EU-US Data Privacy Framework reliance, a breach notification
+  deadline in hours, certifications or encryption standards unless the inputs
+  supplied them.
+
 ## 0.6.1
 
 - The server now starts without `POLICYFORGE_API_KEY` instead of exiting, so a

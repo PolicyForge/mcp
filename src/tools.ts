@@ -172,12 +172,11 @@ const STACK_MANIFEST_FIELD = z
   .record(z.unknown())
   .optional()
   .describe(
-    "Structured summary of the stack you detected while scanning the codebase " +
-      '(see get_disclosure_checklist), e.g. {"analytics":["posthog"],"payments":["stripe"],' +
+    "Structured summary of the services and data the product uses, e.g. " +
+      '{"analytics":["posthog"],"payments":["stripe"],' +
       '"auth":["supabase"],"ai_features":["openai"],"cookies":["session"],' +
-      '"jurisdiction_signals":["EU locales"]}. Stored server-side so ' +
-      "check_policy_freshness can detect drift when the stack changes later. " +
-      "Provide it whenever you scanned the project.",
+      '"jurisdiction_signals":["EU locales"]}. Stored with the policy so later ' +
+      "changes to the stack can be detected.",
   );
 
 /**
@@ -564,30 +563,47 @@ function integrationGuide(
   return `${header}${byFramework[framework]}\n${footer}`;
 }
 
+/**
+ * Server-level guidance, sent once in the initialize result. Tool descriptions
+ * stay purely descriptive, since directory review rejects descriptions that
+ * tell the model how to behave, so the workflow tying the tools together
+ * lives here. Pass it as `instructions` wherever a server is created.
+ */
+export const SERVER_INSTRUCTIONS = [
+  "PolicyForge generates, hosts and maintains legal documents such as privacy policies and terms of service.",
+  "",
+  "Inside a software project, documents are most accurate when they are based on the code. get_disclosure_checklist lists what to look for (analytics, payments, auth, AI providers, cookies, embedded third parties), and the findings fill generate_policy's optional fields and its stack_manifest. Facts the code cannot show, such as the legal company name, contact email, physical address and governing law, come from the user.",
+  "",
+  "Generation runs for 40 to 60 seconds. When a generation tool returns a job ID, check_generation returns the result; starting the same generation again creates a second document and uses more quota.",
+  "",
+  "Generated documents list claims to verify. Review them with the user and correct them with update_policy before publishing. get_integration_guide returns the snippet for linking a policy from the site.",
+  "",
+  "For later changes: update_policy for wording fixes (no quota), regenerate_policy when the business context changes substantially, check_policy_freshness to compare the current stack with the one stored at generation time, and restore_policy_version to undo a change. delete_policy is permanent and breaks hosted links, so confirm with the user first.",
+].join("\n");
+
 export function registerTools(server: McpServer, client: PolicyForgeClient): void {
   server.registerTool(
     "generate_policy",
     {
       title: "Generate policy",
       description:
-        "Generate a legal policy (privacy policy, terms of service, cookie policy, " +
-        "refund policy, EULA, or disclaimer) for a business and return its Markdown " +
-        "content plus a hosted URL. Consumes one policy from the account's quota. " +
-        "IMPORTANT: if you are working inside the user's project, call " +
-        "get_disclosure_checklist and scan the codebase FIRST (dependencies, script " +
-        "tags, cookie writes, outbound hosts), then fill the optional fields below " +
-        "from what the code actually does — do not ask the user for facts you can " +
-        "read from source. Only ask for what code cannot tell you: legal company " +
-        "name, contact email, physical address, governing law. For terms_of_service, " +
-        "eula and disclaimer, always ask for governing_law: without it (or a physical " +
-        "address to infer it from) the document contains a marker to fill in. " +
-        "The result lists claims to verify: specific statements about third parties, " +
-        "certifications or deadlines that your inputs did not supply. Show them to " +
-        "the user and fix them with update_policy before publishing. " +
-        "Generation takes 40-60 seconds; if it is not finished within about 45 seconds " +
-        "this returns a job ID instead, and check_generation fetches the result. " +
-        "Never call generate_policy again for the same policy while a job is running.",
+        "Generates a legal policy (privacy policy, terms of service, cookie policy, " +
+        "refund policy, EULA or disclaimer) for a business, saves it to the " +
+        "PolicyForge account, and returns the Markdown content and a hosted URL. Uses " +
+        "one document from the account's quota. The optional fields describe what the " +
+        "product does (data collected, third-party services, payments, analytics, " +
+        "cookies), and the document is more accurate when they reflect the product's " +
+        "actual code and configuration. Company facts such as the legal name, contact " +
+        "email, physical address and governing law come from the user. For " +
+        "terms_of_service, eula and disclaimer, a document generated without " +
+        "governing_law or physical_address contains a placeholder where the governing " +
+        "law goes. The result lists claims to verify: statements about third parties, " +
+        "certifications or deadlines that the inputs did not supply. Generation takes " +
+        "40 to 60 seconds. If it is not finished within about 45 seconds, the tool " +
+        "returns a job ID instead of the document and the job keeps running; calling " +
+        "generate_policy again starts a separate document and uses more quota.",
       annotations: {
+        title: "Generate policy",
         readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: false,
@@ -635,18 +651,17 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
     {
       title: "Generate a HIPAA Business Associate Agreement",
       description:
-        "Generate a HIPAA Business Associate Agreement (BAA) between a covered entity " +
-        "and a vendor that handles Protected Health Information. Built from the clauses " +
-        "required by 45 CFR 164.504(e) and validated clause by clause before it is returned. " +
-        "\n\nUse this instead of generate_policy for BAAs — a BAA is a binding two-party " +
-        "contract, not a published policy, so it needs both parties' legal names and " +
-        "addresses and is never hosted at a public URL. " +
-        "\n\nAsk the user for the party details, effective date, and governing law: these " +
-        "are negotiated facts you cannot read from source code. Requires a Pro plan. " +
-        "The result is a draft for counsel to review, not executed legal advice. " +
-        "If it is not finished within about 45 seconds this returns a job ID; use " +
-        "check_generation for the result.",
+        "Generates a HIPAA Business Associate Agreement (BAA) between a covered " +
+        "entity and a vendor that handles Protected Health Information, built from " +
+        "the clauses required by 45 CFR 164.504(e) and validated clause by clause. A " +
+        "BAA is a binding two-party contract rather than a published policy: it needs " +
+        "both parties' legal names and addresses, an effective date and a governing " +
+        "law state, and it is never hosted at a public URL. Requires a Pro plan. The " +
+        "result is a draft for counsel to review, not legal advice. If it is not " +
+        "finished within about 45 seconds, the tool returns a job ID instead of the " +
+        "document and the job keeps running.",
       annotations: {
+        title: "Generate a HIPAA Business Associate Agreement",
         readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: false,
@@ -678,8 +693,9 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
     {
       title: "List policies",
       description:
-        "List the policies previously created on this PolicyForge account, newest first.",
-      annotations: { readOnlyHint: true, openWorldHint: true },
+        "Lists the policies saved on this PolicyForge account, newest first, with " +
+        "optional filters by status and type.",
+      annotations: { title: "List policies", readOnlyHint: true, openWorldHint: true },
       inputSchema: {
         limit: z.number().int().min(1).max(100).optional().describe("Max results (1-100, default 20)."),
         offset: z.number().int().min(0).optional().describe("Pagination offset."),
@@ -706,8 +722,9 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
     {
       title: "Get policy",
       description:
-        "Retrieve a single policy by ID, including its status, hosted URL, and full Markdown content.",
-      annotations: { readOnlyHint: true, openWorldHint: true },
+        "Returns one policy by ID, including its status, hosted URL and full Markdown " +
+        "content.",
+      annotations: { title: "Get policy", readOnlyHint: true, openWorldHint: true },
       inputSchema: {
         id: z
           .string()
@@ -762,11 +779,11 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
     {
       title: "Check generation",
       description:
-        "Get the result of a generate_policy, generate_baa or regenerate_policy call " +
-        "that was still running when it returned a job ID. Returns the finished " +
-        "policy, the error if generation failed, or says it is still running. " +
-        "Use this instead of starting the generation again, which would create a duplicate.",
-      annotations: { readOnlyHint: true, openWorldHint: true },
+        "Returns the state of a policy generation job: the finished document, the " +
+        "error if generation failed, or a note that it is still running. Takes the " +
+        "job ID that generate_policy, generate_baa or regenerate_policy returns when " +
+        "generation runs longer than about 45 seconds.",
+      annotations: { title: "Check generation", readOnlyHint: true, openWorldHint: true },
       inputSchema: {
         job_id: z.string().min(1).describe("The job ID returned by the generation tool."),
       },
@@ -790,15 +807,14 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
     {
       title: "Update policy",
       description:
-        "Update an existing policy in place — the policy ID, hosted URL, and embed " +
-        "keep working, so links already published on the user's site stay valid. " +
-        "Use this instead of generate_policy when the business context changed " +
-        "(new SDK, new data flow, renamed company): fetch the current content with " +
-        "get_policy, then either send small changes as `edits` (exact find/replace " +
-        "pairs, best for one-line fixes) or submit the complete revised Markdown as " +
-        "`content`. The previous content is saved as a version first, so " +
-        "restore_policy_version can undo a bad update.",
+        "Updates an existing policy in place. The policy ID, hosted URL and embeds " +
+        "stay the same, so links already published on a site keep working. Accepts " +
+        "small find-and-replace changes as `edits` or a complete revised document as " +
+        "`content`, and can also change the title, status, effective date, hosting " +
+        "and consent banner. The previous content is saved as a version first, so an " +
+        "update can be undone. Does not use generation quota.",
       annotations: {
+        title: "Update policy",
         readOnlyHint: false,
         destructiveHint: true,
         idempotentHint: true,
@@ -812,8 +828,8 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
           .min(1)
           .optional()
           .describe(
-            "Full replacement Markdown content. Submit the COMPLETE document, not a diff. " +
-              "Omit when using `edits`.",
+            "Full replacement Markdown content: the complete document, not a diff. " +
+              "Cannot be combined with `edits`.",
           ),
         edits: z
           .array(
@@ -916,16 +932,15 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
     {
       title: "Regenerate policy",
       description:
-        "Re-run the AI generation engine over a policy's stored business context " +
-        "merged with the changed fields you provide — same policy ID and hosted " +
-        "URL, so published links keep working. The previous content is saved as a " +
-        "version first (see list_policy_versions / restore_policy_version). " +
-        "Consumes one generation from quota, like generate_policy. Use this when " +
-        "the business context changed substantially (new integrations, new " +
-        "jurisdiction, renamed company); for small wording fixes prefer " +
-        "update_policy, which is free and instant. If it is not finished within " +
-        "about 45 seconds this returns a job ID; use check_generation for the result.",
+        "Re-runs AI generation for an existing policy, using its stored business " +
+        "details merged with the changed fields provided. The policy ID and hosted " +
+        "URL stay the same, so published links keep working, and the previous content " +
+        "is saved as a version first. Suited to substantial changes such as new " +
+        "integrations, a new jurisdiction or a renamed company. Uses one document " +
+        "from the account's quota. If it is not finished within about 45 seconds, the " +
+        "tool returns a job ID instead of the document and the job keeps running.",
       annotations: {
+        title: "Regenerate policy",
         readOnlyHint: false,
         destructiveHint: true,
         idempotentHint: false,
@@ -961,19 +976,17 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
     {
       title: "Audit compliance",
       description:
-        "Compliance gap analysis: submit the stack manifest you built by scanning " +
-        "the codebase (see get_disclosure_checklist), optionally with a policy_id " +
-        "to audit against. PolicyForge compares what the code does with what the " +
-        "policy discloses and returns missing disclosures, overstated claims, " +
-        "missing policy types, and recommendations. Without a policy_id it audits " +
-        "the manifest alone (which policies are needed and what they must cover). " +
-        "Does not consume generation quota.",
-      annotations: { readOnlyHint: true, openWorldHint: true },
+        "Compliance gap analysis. Compares a stack manifest (the services, cookies " +
+        "and personal data a product uses) with a saved policy and returns missing " +
+        "disclosures, overstated claims, missing policy types and recommendations. " +
+        "Without a policy_id, it reports which policies the stack needs and what they " +
+        "must cover. Does not use generation quota.",
+      annotations: { title: "Audit compliance", readOnlyHint: true, openWorldHint: true },
       inputSchema: {
         manifest: z
           .record(z.unknown())
           .describe(
-            "The detected-stack summary from your codebase scan, e.g. " +
+            "Summary of the services, cookies and personal data the product uses, e.g. " +
               '{"analytics":["posthog"],"payments":["stripe"],"ai_features":["openai"],' +
               '"cookies":["session","_ph_*"],"jurisdiction_signals":["EU locales"],' +
               '"user_data_collected":["email","usage_events"]}.',
@@ -1053,17 +1066,16 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
     {
       title: "Check policy freshness",
       description:
-        "Drift detection: scan the codebase now (get_disclosure_checklist), build " +
-        "the current stack manifest, and compare it against the manifest stored " +
-        "when the policy was last generated/regenerated. Reports what changed in " +
-        "the stack so you know whether the policy still matches the code. Runs " +
-        "locally on the two manifests — no AI call, no quota.",
-      annotations: { readOnlyHint: true, openWorldHint: true },
+        "Compares a current stack manifest with the one stored when the policy was " +
+        "last generated or regenerated, and reports what changed in the stack, which " +
+        "shows whether the policy still matches the product. Works on the two " +
+        "manifests only: no AI call and no quota.",
+      annotations: { title: "Check policy freshness", readOnlyHint: true, openWorldHint: true },
       inputSchema: {
         id: z.string().min(1).describe("The policy ID (UUID) to check."),
         current_manifest: z
           .record(z.unknown())
-          .describe("The stack manifest from your fresh codebase scan."),
+          .describe("The product's current stack manifest, in the same format as stack_manifest."),
       },
     },
     safe(async ({ id, current_manifest }) => {
@@ -1111,11 +1123,10 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
     {
       title: "List policy versions",
       description:
-        "Version history for a policy: snapshots taken before every API update, " +
-        "regeneration, or restore, plus any auto-generated compliance update " +
-        "drafts. Use get-version content via restore_policy_version, or fetch a " +
-        "single version's content with this policy's versions endpoint.",
-      annotations: { readOnlyHint: true, openWorldHint: true },
+        "Lists a policy's version history: a snapshot taken before every update, " +
+        "regeneration or restore, plus any auto-generated compliance update drafts, " +
+        "each with its version number.",
+      annotations: { title: "List policy versions", readOnlyHint: true, openWorldHint: true },
       inputSchema: {
         id: z.string().min(1).describe("The policy ID (UUID)."),
       },
@@ -1163,10 +1174,11 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
     {
       title: "Restore policy version",
       description:
-        "Restore a policy to a previous version from list_policy_versions. The " +
-        "current content is snapshotted as a new version first, so a restore is " +
-        "itself reversible. The hosted URL is unchanged.",
+        "Restores a policy to an earlier version by version number. The current " +
+        "content is saved as a new version first, so a restore can itself be undone. " +
+        "The hosted URL does not change.",
       annotations: {
+        title: "Restore policy version",
         readOnlyHint: false,
         destructiveHint: true,
         idempotentHint: true,
@@ -1214,10 +1226,10 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
     {
       title: "Delete policy",
       description:
-        "Permanently delete a policy. The hosted URL and any embeds of it stop " +
-        "working immediately, and this cannot be undone. Confirm with the user " +
-        "before deleting anything they may have linked from their site.",
+        "Permanently deletes a policy. Its hosted URL and any embeds of it stop " +
+        "working immediately, and the deletion cannot be undone.",
       annotations: {
+        title: "Delete policy",
         readOnlyHint: false,
         destructiveHint: true,
         idempotentHint: true,
@@ -1240,10 +1252,8 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
     {
       title: "Get usage & quota",
       description:
-        "Check the account's subscription tier and remaining policy-generation " +
-        "quota. Call this before generate_policy on accounts that may be on the " +
-        "free tier, so you can plan instead of hitting quota errors.",
-      annotations: { readOnlyHint: true, openWorldHint: true },
+        "Returns the account's plan and its remaining document generation quota.",
+      annotations: { title: "Get usage & quota", readOnlyHint: true, openWorldHint: true },
       inputSchema: {},
     },
     safe(async () => {
@@ -1280,12 +1290,10 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
     {
       title: "Get disclosure checklist",
       description:
-        "Get the rubric for scanning a codebase before generating or updating " +
-        "policies: which SDKs, scripts, and patterns legally require disclosure, " +
-        "and how each finding maps to generate_policy's fields. Call this before " +
-        "generate_policy when working inside the user's project — policies " +
-        "derived from the actual code beat policies from memory.",
-      annotations: { readOnlyHint: true, openWorldHint: false },
+        "Returns PolicyForge's disclosure checklist: the SDKs, scripts and code " +
+        "patterns that legally require disclosure in a privacy or cookie policy, and " +
+        "how each one maps to generate_policy's fields and the stack manifest format.",
+      annotations: { title: "Get disclosure checklist", readOnlyHint: true, openWorldHint: false },
       inputSchema: {},
     },
     safe(async () => textResult(DISCLOSURE_CHECKLIST)),
@@ -1296,11 +1304,10 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
     {
       title: "Get integration guide",
       description:
-        "Get copy-paste instructions for wiring a generated policy into the " +
-        "user's site: hosted link, embed snippet, and framework-specific " +
-        "placement. Call this after generate_policy to finish the job — a " +
-        "generated policy helps nobody until it's linked from the site.",
-      annotations: { readOnlyHint: true, openWorldHint: true },
+        "Returns snippets for adding a policy to a website: the hosted link, an embed " +
+        "snippet, and where to place them in the chosen framework (Next.js, React, " +
+        "WordPress or plain HTML).",
+      annotations: { title: "Get integration guide", readOnlyHint: true, openWorldHint: true },
       inputSchema: {
         id: z.string().min(1).describe("The policy ID (UUID) to integrate."),
         framework: z
@@ -1338,9 +1345,9 @@ export function registerTools(server: McpServer, client: PolicyForgeClient): voi
     {
       title: "List policy types",
       description:
-        "List the supported policy types, business types, and jurisdictions accepted " +
-        "by generate_policy. Call this first if unsure which enum values are valid.",
-      annotations: { readOnlyHint: true, openWorldHint: false },
+        "Lists the policy types, business types and jurisdictions that " +
+        "generate_policy accepts.",
+      annotations: { title: "List policy types", readOnlyHint: true, openWorldHint: false },
       inputSchema: {},
     },
     safe(async () => {

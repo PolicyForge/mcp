@@ -3,7 +3,7 @@
   "name": "co.policyforge/mcp",
   "description": "Generate, audit, and maintain legal policies that match what your code actually does.",
   "status": "active",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "websiteUrl": "https://policyforge.co",
   "repository": {
     "url": "https://github.com/PolicyForge/mcp",
@@ -20,14 +20,14 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@policyforge/mcp",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "transport": {
         "type": "stdio"
       },
       "environmentVariables": [
         {
           "name": "POLICYFORGE_API_KEY",
-          "description": "PolicyForge API key — create one at https://policyforge.co/api-dashboard",
+          "description": "PolicyForge API key. Create one at https://policyforge.co/api-dashboard",
           "isRequired": true,
           "isSecret": true
         }

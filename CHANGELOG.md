@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.9.0
+
+- Tool descriptions now say what each tool does and when it is useful, and no
+  longer tell the model how to behave (for example "call X first" or "ask the
+  user"). The Claude connector directory requires this.
+- The workflow guidance moved to the server's `instructions`, sent once at
+  initialize: scan the project with `get_disclosure_checklist` before
+  `generate_policy`, use `check_generation` for running jobs, review the
+  claims to verify, and confirm before `delete_policy`. `SERVER_INSTRUCTIONS`
+  is exported from `@policyforge/mcp/tools` for hosts that create their own
+  server.
+- Every tool sets `annotations.title` as well as the top-level `title`, so
+  directories that read the annotation show a readable name.
+- Removed dashes from field descriptions.
+
 ## 0.8.0
 
 - Generation no longer times out in MCP clients. Generating a policy takes

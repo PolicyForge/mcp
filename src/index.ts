@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { PolicyForgeClient } from "./client.js";
-import { registerTools } from "./tools.js";
+import { registerTools, SERVER_INSTRUCTIONS } from "./tools.js";
 
 // Single source of truth for the version — package.json.
 const pkg = createRequire(import.meta.url)("../package.json") as { version: string };
@@ -31,10 +31,13 @@ async function main(): Promise<void> {
     clientName: "mcp-stdio",
   });
 
-  const server = new McpServer({
-    name: "policyforge",
-    version: pkg.version,
-  });
+  const server = new McpServer(
+    {
+      name: "policyforge",
+      version: pkg.version,
+    },
+    { instructions: SERVER_INSTRUCTIONS },
+  );
 
   registerTools(server, client);
 
